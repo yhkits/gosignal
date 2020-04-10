@@ -108,5 +108,21 @@ func TestSignal_demo(t *testing.T) {
 	t.Log("send simulation signal:", sig)
 	syscall.Kill(os.Getpid(), sig)
 
+	//s.Stop()
+	s.Run()
+	t.Log("send simulation signal:", sig)
+	syscall.Kill(os.Getpid(), sig)
+
+	time.Sleep(interval)
+
 	time.Sleep(time.Second)
+}
+
+func TestSignal_Stop(t *testing.T) {
+	s := NewSignal()
+	s.Run()
+	s.Run()
+	s.Stop()
+	s.Stop()
+	s.Stop()
 }

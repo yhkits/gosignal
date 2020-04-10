@@ -21,13 +21,15 @@ type Signal struct {
 	tips           bool                        // 提示
 	goroutine      bool                        // 是否以协程方式执行信号处理程序
 	stop           chan struct{}               // 停止
+	stopped        chan struct{}               // 是否关闭
+	running        bool                        // 是否运行
 }
 
 func NewSignal() *Signal {
 	return &Signal{
 		set:    make(map[os.Signal]SignalHandler),
 		ignore: make(map[os.Signal]bool),
-		sig:    make(chan os.Signal),
+		sig:    make(chan os.Signal, 1),
 		stop:   make(chan struct{}),
 		enable: true,
 		tips:   true,
@@ -100,21 +102,42 @@ func (s *Signal) Listen(sig ...os.Signal) *Signal {
 }
 
 func (s *Signal) Run() {
-	go func() {
-		for {
-			select {
-			case <-s.stop:
-				break
-			case sig := <-s.sig:
-				s.handler(sig, nil)
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
+	if false == s.running {
+		s.verboseln("running ...")
+		s.running = true
+		s.stopped = make(chan struct{})
+
+		s.verboseln()
+
+		go func() {
+			defer func() {
+				s.verboseln("has stopped")
+				s.running = false
+			}()
+
+			for {
+				select {
+				case <-s.stop:
+					return
+				case sig := <-s.sig:
+					s.handler(sig, nil)
+				}
 			}
-		}
-	}()
+		}()
+	}
 }
 
 func (s *Signal) Stop() {
-	s.stop <- struct{}{}
-	signal.Stop(s.sig) // 调用后将不再处理任何信号, 系统恢复为针对中断信号的默认动作是关闭进程, 即当前进程被终止
+	select {
+	case <-s.stopped:
+	default:
+		close(s.stopped)
+		s.stop <- struct{}{}
+		signal.Stop(s.sig) // 调用后将不再处理任何信号, 系统恢复为针对中断信号的默认动作是关闭进程, 即当前进程被终止
+	}
 }
 
 func (s *Signal) handler(sig os.Signal, args ...interface{}) {
